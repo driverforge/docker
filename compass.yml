@@ -1,0 +1,16 @@
+name: docker
+id: ari:cloud:compass:f6fef4e5-fd35-483c-9e9d-d5c773a1b273:component/153428a6-f223-47a8-8739-9cfb68a7fee2/1ab11f62-1f08-4a71-a493-ccc155770d53
+description: null
+configVersion: 1
+typeId: SERVICE
+fields:
+  tier: 4
+links:
+  - name: null
+    type: REPOSITORY
+    url: https://github.com/driverforge/docker
+relationships:
+  DEPENDS_ON: []
+labels:
+  - source:github
+customFields: null
