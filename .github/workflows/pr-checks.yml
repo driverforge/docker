@@ -1,0 +1,139 @@
+name: PR checks
+
+on:
+  pull_request:
+    paths:
+      - 'images/**'
+
+permissions:
+  contents: read
+
+jobs:
+  detect-changed-images:
+    name: Detect changed images
+    runs-on: ubuntu-latest
+    outputs:
+      images: ${{ steps.detect.outputs.images }}
+      has-changes: ${{ steps.detect.outputs.has-changes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: List images with changes vs base
+        id: detect
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          # Unique top-level dirs under images/ that have any change in this PR.
+          changed=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- 'images/' \
+            | awk -F/ 'NF>=2 {print $2}' \
+            | sort -u)
+
+          if [ -z "$changed" ]; then
+            echo "No image directories changed."
+            echo "has-changes=false" >> "$GITHUB_OUTPUT"
+            echo "images=[]" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Changed images:"
+          echo "$changed" | sed 's/^/  - /'
+
+          json=$(echo "$changed" | jq -R . | jq -sc .)
+          echo "has-changes=true" >> "$GITHUB_OUTPUT"
+          echo "images=$json" >> "$GITHUB_OUTPUT"
+
+  validate:
+    name: Validate ${{ matrix.image }}
+    needs: detect-changed-images
+    if: needs.detect-changed-images.outputs.has-changes == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.detect-changed-images.outputs.images) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Require VERSION bump if other files in this image changed
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          IMAGE: ${{ matrix.image }}
+        run: |
+          set -euo pipefail
+
+          # Did the VERSION file change in this PR?
+          version_changed=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" \
+            -- "images/$IMAGE/VERSION" | wc -l)
+
+          # Did anything OTHER than VERSION + CHANGELOG change?
+          other_changed=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" \
+            -- "images/$IMAGE/" \
+            | grep -vE "^images/$IMAGE/(VERSION|CHANGELOG\.md)$" \
+            | wc -l)
+
+          if [ "$other_changed" -gt 0 ] && [ "$version_changed" -eq 0 ]; then
+            echo "::error::images/$IMAGE/ has changes but VERSION was not bumped."
+            echo "Bump images/$IMAGE/VERSION to a new SemVer and update CHANGELOG.md."
+            exit 1
+          fi
+
+          echo "VERSION bump check passed."
+
+      - name: Validate VERSION is SemVer and strictly greater than base
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          IMAGE: ${{ matrix.image }}
+        run: |
+          set -euo pipefail
+
+          if [ ! -f "images/$IMAGE/VERSION" ]; then
+            echo "::error::images/$IMAGE/VERSION is missing."
+            exit 1
+          fi
+
+          new_version=$(tr -d '[:space:]' < "images/$IMAGE/VERSION")
+          if ! echo "$new_version" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::images/$IMAGE/VERSION ('$new_version') is not SemVer (X.Y.Z)."
+            exit 1
+          fi
+
+          # Compare against the base branch's VERSION (if any).
+          if old_version=$(git show "$BASE_SHA:images/$IMAGE/VERSION" 2>/dev/null | tr -d '[:space:]'); then
+            # Sort both; highest should be the new one.
+            highest=$(printf '%s\n%s\n' "$old_version" "$new_version" | sort -V | tail -1)
+            if [ "$old_version" = "$new_version" ]; then
+              : # No bump, fine — handled by the "require bump" step.
+            elif [ "$highest" != "$new_version" ]; then
+              echo "::error::VERSION went backwards: $old_version -> $new_version."
+              exit 1
+            fi
+          fi
+
+          echo "VERSION is valid SemVer: $new_version (base: ${old_version:-none})"
+          echo "VERSION=$new_version" >> "$GITHUB_ENV"
+
+      - name: Ensure tag does not already exist in ghcr.io
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: |
+          set -euo pipefail
+
+          tag="ghcr.io/${{ github.repository_owner }}/$IMAGE:$VERSION"
+
+          # Anonymous pull works for public ghcr.io images. If the manifest
+          # inspect succeeds, the tag exists — means someone tried to reuse
+          # an already-published version number.
+          if docker manifest inspect "$tag" > /dev/null 2>&1; then
+            echo "::error::$tag already exists in ghcr.io. Bump images/$IMAGE/VERSION."
+            exit 1
+          fi
+
+          echo "Tag $tag is available."
