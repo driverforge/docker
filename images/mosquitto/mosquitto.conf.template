@@ -4,30 +4,30 @@ persistence false
 log_type all
 
 # mosquitto-go-auth HTTP backend. On CONNECT the plugin POSTs the MQTT
-# username/password/clientid to graph /api/mqtt/auth/user; on each new
-# PUBLISH topic or SUBSCRIBE it POSTs {username, clientid, topic, acc}
-# to /api/mqtt/auth/acl. Graph uses the JWT in password + clientid prefix
-# to enforce per-user topic ACLs (see DF-237 for the full model).
+# username/password/clientid to {AUTH_BACKEND_PATH_PREFIX}/user; on each
+# new PUBLISH topic or SUBSCRIBE it POSTs {username, clientid, topic,
+# acc} to {AUTH_BACKEND_PATH_PREFIX}/acl. The backend decides.
 auth_plugin /mosquitto/go-auth.so
 auth_opt_backends http
 
-auth_opt_http_host ${GRAPH_HOST}
-auth_opt_http_port ${GRAPH_PORT}
-auth_opt_http_getuser_uri /api/mqtt/auth/user
-auth_opt_http_superuser_uri /api/mqtt/auth/superuser
-auth_opt_http_aclcheck_uri /api/mqtt/auth/acl
+auth_opt_http_host ${AUTH_BACKEND_HOST}
+auth_opt_http_port ${AUTH_BACKEND_PORT}
+auth_opt_http_getuser_uri ${AUTH_BACKEND_PATH_PREFIX}/user
+auth_opt_http_superuser_uri ${AUTH_BACKEND_PATH_PREFIX}/superuser
+auth_opt_http_aclcheck_uri ${AUTH_BACKEND_PATH_PREFIX}/acl
 auth_opt_http_method POST
 auth_opt_http_with_tls false
 auth_opt_http_params_mode json
 auth_opt_http_response_mode status
 
-# Shared secret proves to graph that the caller is the broker and not
-# just any client on the cluster network. Rotated via Key Vault.
+# Shared secret proves to the backend that the caller is the broker
+# and not just any client on the network. Consumers rotate this via
+# whatever their secret-management system provides.
 auth_opt_http_headers X-Hook-Secret=${MQTT_AUTH_HOOK_SECRET}
 
-# Short cache avoids a graph call per publish on a busy connection while
-# keeping revocation responsive. ACL cache keys include topic, so
-# switching topic mid-session triggers a fresh check.
+# Short cache avoids a backend call per publish on a busy connection
+# while keeping revocation responsive. ACL cache keys include topic,
+# so switching topic mid-session triggers a fresh check.
 auth_opt_cache true
 auth_opt_auth_cache_seconds 30
 auth_opt_acl_cache_seconds 30

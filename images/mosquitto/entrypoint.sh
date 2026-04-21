@@ -1,19 +1,20 @@
 #!/bin/sh
 #
-# Render mosquitto.conf from the template, substituting env-provided values
-# (graph host, shared secret), then exec mosquitto. Fails fast if any
-# required variable is missing so we don't silently boot with a broken
-# auth config.
+# Render mosquitto.conf from the template, substituting env-provided
+# values (auth backend location, shared secret), then exec mosquitto.
+# Fails fast if any required variable is missing so we don't silently
+# boot with a broken auth config.
 
 set -eu
 
-: "${GRAPH_HOST:?GRAPH_HOST must be set (graph service hostname)}"
+: "${AUTH_BACKEND_HOST:?AUTH_BACKEND_HOST must be set (hostname of the HTTP auth backend)}"
 : "${MQTT_AUTH_HOOK_SECRET:?MQTT_AUTH_HOOK_SECRET must be set}"
-: "${GRAPH_PORT:=8080}"
+: "${AUTH_BACKEND_PORT:=8080}"
+: "${AUTH_BACKEND_PATH_PREFIX:=/api/mqtt/auth}"
 
-export GRAPH_HOST GRAPH_PORT MQTT_AUTH_HOOK_SECRET
+export AUTH_BACKEND_HOST AUTH_BACKEND_PORT AUTH_BACKEND_PATH_PREFIX MQTT_AUTH_HOOK_SECRET
 
-envsubst '${GRAPH_HOST} ${GRAPH_PORT} ${MQTT_AUTH_HOOK_SECRET}' \
+envsubst '${AUTH_BACKEND_HOST} ${AUTH_BACKEND_PORT} ${AUTH_BACKEND_PATH_PREFIX} ${MQTT_AUTH_HOOK_SECRET}' \
     < /mosquitto/config/mosquitto.conf.template \
     > /mosquitto/config/mosquitto.conf
 

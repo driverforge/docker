@@ -1,23 +1,17 @@
 # driverforge/docker
 
-Public home for Driverforge's infrastructure and CI base images. Anything
-in this repo is MIT-licensed and ships to `ghcr.io/driverforge/<image>`.
-
-This repo is deliberately separate from the Driverforge application
-monorepo so there's no ambient risk of accidentally publishing
-proprietary code or configuration alongside public base images. Repo
-visibility == image visibility.
+Public home for infrastructure and CI base images. Everything here is
+MIT-licensed and ships to `ghcr.io/driverforge/<image>`.
 
 ## What lives here
 
 | Image | Purpose |
 |-------|---------|
-| `anvil-linux-node` | Thin wrapper over `node:22-alpine` with `corepack enable`. Every Driverforge Node service extends this so every service sits on a pinned, known-digest base. |
-| `mosquitto` | Mosquitto MQTT broker built on `iegomez/mosquitto-go-auth`. Used by Driverforge for per-connection JWT auth (see DF-237). |
+| `anvil-linux-node` | Thin wrapper over `node:22-alpine` with `corepack enable`. Meant as a shared base for Node services so every consumer sits on a pinned, known-digest image instead of floating `node:22-alpine` drifting underneath future rebuilds. |
+| `mosquitto` | Mosquitto MQTT broker pre-built with the `mosquitto-go-auth` HTTP-callback plugin. Configured at runtime via env vars pointing at any compliant HTTP auth backend. |
 
-Application images (graph, anvil-ingestion, etc.) are **not** published
-here. They build on top of `anvil-linux-node` and live in the private
-Driverforge container registry because they contain proprietary code.
+Application-level images are not published here; they live in a
+private container registry.
 
 ## Versioning
 
@@ -25,10 +19,9 @@ Every image has an `images/<name>/VERSION` file holding a SemVer string
 (`1.2.3`). Tags on the registry are:
 
 - `ghcr.io/driverforge/<name>:{VERSION}` — immutable, pinned by consumers
-- `ghcr.io/driverforge/<name>:latest` — floating, only for manual `docker
-  pull` exploration. Do **not** reference `:latest` from
-  `dev-deps.yml`, from a k8s manifest, or from a service Dockerfile.
-  Always pin to an explicit version.
+- `ghcr.io/driverforge/<name>:latest` — floating, only for manual
+  `docker pull` exploration. Don't reference `:latest` from production
+  configs or CI. Always pin to an explicit version.
 
 ### Bumping a version
 
@@ -53,11 +46,9 @@ Every image has an `images/<name>/VERSION` file holding a SemVer string
 
 ## Adding a new image
 
-1. Create `images/<name>/` with at minimum `Dockerfile`, `VERSION` (`1.0.0`),
-   and `CHANGELOG.md`.
-2. Add the image name to the matrix in `.github/workflows/publish.yml`
-   and `.github/workflows/pr-checks.yml`.
-3. Open a PR. On merge, the initial `1.0.0` tag is published.
+1. Create `images/<name>/` with at minimum `Dockerfile`, `VERSION`
+   (`1.0.0`), and `CHANGELOG.md`.
+2. Open a PR. On merge, the initial `1.0.0` tag is published.
 
 ## Registry
 
@@ -67,4 +58,3 @@ auto-provisioned `GITHUB_TOKEN` to push.
 ## Policy
 
 - **No commits directly to `main`.** Everything goes through a PR.
-- **No Claude / AI attribution** in commits or PR descriptions.

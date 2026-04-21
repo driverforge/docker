@@ -1,15 +1,15 @@
-# mosquitto — Driverforge MQTT broker with per-connection JWT auth.
+# Mosquitto MQTT broker with per-connection HTTP auth.
 #
 # Built on iegomez/mosquitto-go-auth so we get a Mosquitto binary and
-# plugin compiled against matched ABIs without having to build the
-# plugin ourselves. The plugin delegates every auth decision to
-# driverforge/graph's /api/mqtt/auth/* endpoints, which validate the
-# JWT in the MQTT password and enforce clientID-prefix + topic ACL
-# matching against the JWT sub (see DF-237).
+# the auth plugin compiled against matched ABIs without having to
+# build the plugin ourselves. The plugin delegates auth + ACL
+# decisions to an HTTP backend configured at container start via the
+# AUTH_BACKEND_* env vars — consumers point it at whatever service
+# implements the mosquitto-go-auth HTTP protocol.
 FROM iegomez/mosquitto-go-auth:latest
 
-# envsubst lets entrypoint.sh inject runtime values (graph host, shared
-# secret) into the config without an external templater.
+# envsubst lets entrypoint.sh inject runtime values (backend host,
+# path, shared secret) into the config without an external templater.
 USER root
 RUN apk add --no-cache gettext
 
