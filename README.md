@@ -8,7 +8,7 @@ MIT-licensed and ships to `ghcr.io/driverforge/<image>`.
 | Image | Purpose |
 |-------|---------|
 | `anvil-linux-node` | Thin wrapper over `node:22-alpine` with `corepack enable`. Meant as a shared base for Node services so every consumer sits on a pinned, known-digest image instead of floating `node:22-alpine` drifting underneath future rebuilds. |
-| `mosquitto` | Mosquitto MQTT broker pre-built with the `mosquitto-go-auth` HTTP-callback plugin. Configured at runtime via env vars pointing at any compliant HTTP auth backend. |
+| `anvil-mosquitto` | Mosquitto MQTT broker pre-built with the `mosquitto-go-auth` HTTP-callback plugin. Configured at runtime via env vars pointing at any compliant HTTP auth backend. |
 
 Application-level images are not published here; they live in a
 private container registry.
