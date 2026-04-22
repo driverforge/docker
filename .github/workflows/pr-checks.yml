@@ -61,11 +61,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Require VERSION bump if other files in this image changed
+      - name: Require VERSION bump if other files changed and base is published
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           IMAGE: ${{ matrix.image }}
+          OWNER: ${{ github.repository_owner }}
         run: |
           set -euo pipefail
 
@@ -79,18 +80,36 @@ jobs:
             | grep -vE "^images/$IMAGE/(VERSION|CHANGELOG\.md)$" \
             | wc -l)
 
-          if [ "$other_changed" -gt 0 ] && [ "$version_changed" -eq 0 ]; then
-            echo "::error::images/$IMAGE/ has changes but VERSION was not bumped."
+          if [ "$other_changed" -eq 0 ]; then
+            echo "No image-content changes — bump check skipped."
+            exit 0
+          fi
+
+          if [ "$version_changed" -gt 0 ]; then
+            echo "VERSION changed alongside content — bump check passed."
+            exit 0
+          fi
+
+          # Content changed but VERSION didn't. Only legal if base's
+          # VERSION was never published to ghcr.io (previous publish
+          # failed, burning the version) — in that case the PR can
+          # reuse it. If base is published, require a bump so we don't
+          # try to overwrite an immutable tag.
+          base_version=$(git show "$BASE_SHA:images/$IMAGE/VERSION" | tr -d '[:space:]')
+          base_tag="ghcr.io/$OWNER/$IMAGE:$base_version"
+          if docker manifest inspect "$base_tag" > /dev/null 2>&1; then
+            echo "::error::images/$IMAGE/ has content changes but VERSION was not bumped, and $base_tag is already published."
             echo "Bump images/$IMAGE/VERSION to a new SemVer and update CHANGELOG.md."
             exit 1
           fi
 
-          echo "VERSION bump check passed."
+          echo "Base VERSION $base_version is unpublished (burnt in a prior failed publish). Reuse allowed."
 
-      - name: Validate VERSION is SemVer and strictly greater than base
+      - name: Validate VERSION is SemVer and not backwards vs a published base
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           IMAGE: ${{ matrix.image }}
+          OWNER: ${{ github.repository_owner }}
         run: |
           set -euo pipefail
 
@@ -105,19 +124,27 @@ jobs:
             exit 1
           fi
 
-          # Compare against the base branch's VERSION (if any).
+          # If base's VERSION is published to ghcr.io, enforce monotonic
+          # bump against it. If it's unpublished (burnt), allow any
+          # SemVer — the "tag not in ghcr.io" check below is the real gate.
+          note="no base VERSION"
           if old_version=$(git show "$BASE_SHA:images/$IMAGE/VERSION" 2>/dev/null | tr -d '[:space:]'); then
-            # Sort both; highest should be the new one.
-            highest=$(printf '%s\n%s\n' "$old_version" "$new_version" | sort -V | tail -1)
-            if [ "$old_version" = "$new_version" ]; then
-              : # No bump, fine — handled by the "require bump" step.
-            elif [ "$highest" != "$new_version" ]; then
-              echo "::error::VERSION went backwards: $old_version -> $new_version."
-              exit 1
+            base_tag="ghcr.io/$OWNER/$IMAGE:$old_version"
+            if docker manifest inspect "$base_tag" > /dev/null 2>&1; then
+              if [ "$old_version" != "$new_version" ]; then
+                highest=$(printf '%s\n%s\n' "$old_version" "$new_version" | sort -V | tail -1)
+                if [ "$highest" != "$new_version" ]; then
+                  echo "::error::VERSION went backwards: $old_version -> $new_version (base is published)."
+                  exit 1
+                fi
+              fi
+              note="base: $old_version, published"
+            else
+              note="base: $old_version, unpublished — no monotonic check"
             fi
           fi
 
-          echo "VERSION is valid SemVer: $new_version (base: ${old_version:-none})"
+          echo "VERSION is valid SemVer: $new_version ($note)"
           echo "VERSION=$new_version" >> "$GITHUB_ENV"
 
       - name: Ensure tag does not already exist in ghcr.io
