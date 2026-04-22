@@ -1,9 +1,12 @@
 name: PR checks
 
+# Runs on every PR (not just image changes) so that the aggregating
+# `ci` job below can be required in branch protection without
+# blocking docs-only or workflow-only PRs. When no image dirs
+# changed, detect-changed-images outputs an empty matrix, validate
+# is skipped, and the ci gate still passes.
 on:
   pull_request:
-    paths:
-      - 'images/**'
 
 permissions:
   contents: read
@@ -164,3 +167,41 @@ jobs:
           fi
 
           echo "Tag $tag is available."
+
+  # Single aggregating job with a stable name so branch protection
+  # can require one check regardless of how many images are in the
+  # matrix. Passes when every upstream job either succeeded or was
+  # skipped (e.g. no image changes); fails if any upstream failed
+  # or was cancelled.
+  ci:
+    name: CI
+    needs: [detect-changed-images, validate]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate on upstream results
+        env:
+          DETECT_RESULT: ${{ needs.detect-changed-images.result }}
+          VALIDATE_RESULT: ${{ needs.validate.result }}
+        run: |
+          set -euo pipefail
+
+          echo "detect-changed-images: $DETECT_RESULT"
+          echo "validate: $VALIDATE_RESULT"
+
+          if [ "$DETECT_RESULT" != "success" ]; then
+            echo "::error::detect-changed-images did not succeed."
+            exit 1
+          fi
+
+          # validate is 'skipped' when no image dirs changed — that's
+          # a pass. Only fail on explicit failure/cancellation.
+          case "$VALIDATE_RESULT" in
+            success|skipped) ;;
+            *)
+              echo "::error::validate did not succeed ($VALIDATE_RESULT)."
+              exit 1
+              ;;
+          esac
+
+          echo "All required checks passed."
