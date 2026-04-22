@@ -11,8 +11,11 @@ FROM iegomez/mosquitto-go-auth:latest
 # envsubst lets entrypoint.sh inject runtime values (backend host,
 # path, shared secret) into the config without an external templater.
 # The base image is Debian-based, so envsubst comes from gettext-base.
+# --allow-releaseinfo-change lets apt continue when Debian's `stable`
+# codename rolls forward (bullseye → trixie etc.) — the base image
+# points at `stable` in its sources list and hasn't been rebuilt.
 USER root
-RUN apt-get update \
+RUN apt-get update --allow-releaseinfo-change \
     && apt-get install -y --no-install-recommends gettext-base \
     && rm -rf /var/lib/apt/lists/*
 

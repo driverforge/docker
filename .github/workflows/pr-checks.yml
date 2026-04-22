@@ -168,6 +168,34 @@ jobs:
 
           echo "Tag $tag is available."
 
+  build:
+    name: Build ${{ matrix.image }}
+    needs: detect-changed-images
+    if: needs.detect-changed-images.outputs.has-changes == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.detect-changed-images.outputs.images) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU (multi-arch)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Build every arch we'll publish post-merge so a broken
+      # Dockerfile fails the PR rather than the post-merge publish.
+      # push: false — we only want to exercise the build, not ship it.
+      - name: Build (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: images/${{ matrix.image }}
+          platforms: linux/amd64,linux/arm64
+          push: false
+
   # Single aggregating job with a stable name so branch protection
   # can require one check regardless of how many images are in the
   # matrix. Passes when every upstream job either succeeded or was
@@ -175,7 +203,7 @@ jobs:
   # or was cancelled.
   ci:
     name: CI
-    needs: [detect-changed-images, validate]
+    needs: [detect-changed-images, validate, build]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -183,25 +211,32 @@ jobs:
         env:
           DETECT_RESULT: ${{ needs.detect-changed-images.result }}
           VALIDATE_RESULT: ${{ needs.validate.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
         run: |
           set -euo pipefail
 
           echo "detect-changed-images: $DETECT_RESULT"
           echo "validate: $VALIDATE_RESULT"
+          echo "build: $BUILD_RESULT"
 
           if [ "$DETECT_RESULT" != "success" ]; then
             echo "::error::detect-changed-images did not succeed."
             exit 1
           fi
 
-          # validate is 'skipped' when no image dirs changed — that's
-          # a pass. Only fail on explicit failure/cancellation.
-          case "$VALIDATE_RESULT" in
-            success|skipped) ;;
-            *)
-              echo "::error::validate did not succeed ($VALIDATE_RESULT)."
-              exit 1
-              ;;
-          esac
+          # validate and build are 'skipped' when no image dirs
+          # changed — that's a pass. Only fail on explicit
+          # failure/cancellation.
+          for pair in "validate:$VALIDATE_RESULT" "build:$BUILD_RESULT"; do
+            name="${pair%%:*}"
+            result="${pair#*:}"
+            case "$result" in
+              success|skipped) ;;
+              *)
+                echo "::error::$name did not succeed ($result)."
+                exit 1
+                ;;
+            esac
+          done
 
           echo "All required checks passed."
