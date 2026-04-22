@@ -10,8 +10,11 @@ FROM iegomez/mosquitto-go-auth:latest
 
 # envsubst lets entrypoint.sh inject runtime values (backend host,
 # path, shared secret) into the config without an external templater.
+# The base image is Debian-based, so envsubst comes from gettext-base.
 USER root
-RUN apk add --no-cache gettext
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gettext-base \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY mosquitto.conf.template /mosquitto/config/mosquitto.conf.template
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
