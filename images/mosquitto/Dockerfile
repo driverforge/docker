@@ -8,13 +8,15 @@
 # implements the mosquitto-go-auth HTTP protocol.
 FROM iegomez/mosquitto-go-auth:latest
 
-# envsubst lets entrypoint.sh inject runtime values (backend host,
-# path, shared secret) into the config without an external templater.
-# The base image is Debian-based, so envsubst comes from gettext-base.
+# entrypoint.sh substitutes env vars into the config with sed
+# instead of envsubst so we don't have to install anything on top
+# of the base image. The iegomez/mosquitto-go-auth base hasn't been
+# rebuilt in a while and its apt sources point at Debian `stable`,
+# which now resolves to trixie — any apt-get install tries to
+# upgrade base-files across a release boundary and fails. sed is in
+# every Debian base image by default, so rendering the config needs
+# no additional packages and can't break on future Debian rolls.
 USER root
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends gettext-base \
-    && rm -rf /var/lib/apt/lists/*
 
 COPY mosquitto.conf.template /mosquitto/config/mosquitto.conf.template
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
