@@ -20,10 +20,12 @@ auth_opt_http_with_tls false
 auth_opt_http_params_mode json
 auth_opt_http_response_mode status
 
-# Shared secret proves to the backend that the caller is the broker
-# and not just any client on the network. Consumers rotate this via
-# whatever their secret-management system provides.
-auth_opt_http_headers X-Hook-Secret=${MQTT_AUTH_HOOK_SECRET}
+# No header-based shared secret: mosquitto-go-auth's HTTP backend
+# sets only Content-Type and User-Agent on outbound requests, so
+# `auth_opt_http_headers` is silently ignored. Authentication of the
+# broker to the backend must be done at the network layer (mutual TLS,
+# NetworkPolicy, or ingress-scoped routing) — the backend should never
+# be publicly reachable.
 
 # Short cache avoids a backend call per publish on a busy connection
 # while keeping revocation responsive. ACL cache keys include topic,
